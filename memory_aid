@@ -1,0 +1,274 @@
+#!/bin/bash
+
+# memory-aid: A program to help you memorize facts or figures
+	# by giving you a multiple choice quiz.
+
+PROGRAM_NAME="$(basename $0)"
+usage () {
+	echo "Usage: $PROGRAM_NAME [OPTIONS] dict-file"
+	echo "Try $PROGRAM_NAME --help"
+	exit
+}
+
+a=0 # to iterate on args
+_help () {
+	echo "$PROGRAM_NAME [OPTIONS] dict-file"
+	echo "OPTIONS:"
+	echo -e "-n, --number\t\tset number of questions"
+	echo -e "-d, --dictionary\tset dict-file"
+	echo -e "-h, --help\t\tdisplay this help message"
+	exit 1
+}
+if [[ $# -lt 1 || $# -gt 4 ]]; then
+	usage
+else
+	while [[ $a < $# ]]; do
+        case "$1" in
+            -h|--help) 
+                    _help 
+					;;
+            -n|--number)
+                    shift
+                    no_of_question=$1
+                    shift
+                    ;;
+            -d|--dictionary)
+                    shift
+                    FILE="$1"
+                    shift
+        esac
+		a=$((a+1))
+    done
+fi
+	
+if [[ -z "$FILE" ]]; then
+	echo "Dict-file needed."
+	echo "Try $PROGRAM_NAME --help"
+	exit 1
+fi
+#FILE="$1"
+# Major steps:
+	# read notes file
+	# prepare quiz
+	# test user
+	# display result
+
+
+# read notes file
+#FILE="notes.txt"
+#FILE="match.txt"
+
+# notes is gonna be in JSON format
+# {
+#	key: value,
+#	another_key: another_value
+# }
+
+
+# error handling
+error () {
+	if [[ $# -gt 0 ]]; then
+		echo "Error: $1" 2> /dev/null
+	else
+		echo "Error: Something went wrong during ..." 2> /dev/null
+	fi
+	exit
+}
+		
+# open file
+open_file () {
+	if [[ -f $FILE ]]; then
+		if [[ -r $FILE ]]; then
+			if [[ -s $FILE ]]; then
+				read_JSON
+				#echo "keys = "${keys[@]}""
+				#echo "values = "${values[@]}""
+			else
+				error "Couldn't find anything. File empty"
+			fi
+		else
+			error "Couldn't read note file $FILE " 
+		fi
+	else
+		error "Couldn't find note file $FILE " 
+	fi
+}
+# read JSON
+read_JSON () {
+	# separate the key-value pairs into key and value arrays
+	i=0
+	while IFS=',' read pairs; do
+		keys[i]=${pairs%:*} 
+		values[i]=${pairs#*: }
+		((++i))
+	done < $FILE
+}
+
+# prepare quiz
+
+generate_random () {
+	# generate a random number bn 0 and arg1 (or 9 by default)
+	rand=-1
+	if [[ $# -gt 0 ]]; then 
+		len=$1
+	else
+		len=9
+	fi
+	rand=$((1 + RANDOM % len))
+}
+
+shuffle () {
+	# It's gonna shuffle choices
+	if [[ $# -gt 0 ]]; then
+		array[0]=$1
+		array[1]=$2
+		array[2]=$3
+		array[3]=$4
+		len=${#array[@]}
+	else
+		error "Couldn't find an array to shuffle."
+	fi
+	
+	#declare -a shuffled
+	generate_random $len
+	#randoms[]=
+	for (( i=0; i<len; i++ )); do
+		while [[ $rand == '' || $rand == ${randoms[0]} || $rand == ${randoms[1]} || $rand == ${randoms[2]} ]]; do
+			generate_random $len
+		done
+		randoms[i]=$rand
+	done
+	#echo ${randoms[@]}
+	for i in {0..3}; do
+		shuffled[${randoms[$i]} - 1]=${array[i]}
+	done
+
+	#echo "${array[@]} shuffled ${shuffled[@]} "
+
+}
+
+belongs () {
+	target=$1
+	echo "target $target"
+	echo "all "$*""
+	shift
+	for ((i=0; i<$#; i++)); do
+		if [[ $target == $1 ]]; then
+			found=true
+			break
+		else
+			found=false
+			shift
+		fi
+	done
+	if [[ !$found ]]; then
+		echo "$target is not found in list"
+	else
+		echo "$target is found in list"
+	fi
+}
+
+prepare_quiz () {
+	n=${#keys[@]}
+	#echo $n
+	count=0
+	no_of_question=${no_of_question:-$n}
+	last_index=
+	asked_questions=
+	
+	i=0
+	generate_random $n
+	selected[$rand]=0
+	for ((k=0; k<no_of_question; k++)); do
+		if (( k >= n)); then 
+			echo "You have exhausted the all my questions."
+			echo "Please, try again to repeat from the top."
+			break
+		fi
+		#echo "rand = $rand"
+		#echo "selected = ${!selected[@]}"
+		# randomly select a key
+		while [[ ${selected[$rand]} == 1 ]]; do
+			#echo "n = $n"
+			generate_random $n
+			#echo "current rand $rand"
+			#belongs "${keys[$rand - 1]}" "${asked_questions[@]}"
+		done
+		selected[$rand]=1
+		question_index=$rand
+		question_key=${keys[question_index - 1]}
+		#echo "question_key = $question_key"
+		#echo "question_index = $question_index"
+	
+		asked_questions[k]=$question_key
+
+		# randomly select four values - one including the correct answer
+		choices[0]=$question_index
+		for j in {1..3}; do	
+			while (( rand == choices[0] || rand == choices[1] || rand == choices[2] )); do
+				generate_random $len
+			done
+			choices[j]=$rand
+		done
+		#echo "choices [ ${choices[@]} ] "
+		# shuffle the choices
+		shuffle ${choices[@]}
+		#echo "values ${values[@]}"
+		echo
+		echo -e "$((k+1))) Which one of the following is related to \e[7m$question_key\e[0m ? "
+		for colorcode in {93..88} {124..129}; do
+			echo -en "\e[38;5;${colorcode}m|||\e[0m"
+		done
+		echo
+		echo -e "A) ${values[${shuffled[0]} - 1]}\nB) ${values[${shuffled[1]} - 1]}"
+		echo -e "C) ${values[${shuffled[2]} - 1]}\nD) ${values[${shuffled[3]} - 1]}"
+
+		echo
+
+	    # receives input and examine it
+        read -p "Enter your answer your here -> " 
+        #echo $ans
+        case $REPLY in
+            A|a)	index=0 ;;
+            B|b)	index=1 ;;
+            C|c)	index=2 ;;
+            D|d)	index=3 ;;
+            Q|q) 	print_result ;;
+			  #*)	echo "Question skipped!"
+        esac
+        #echo "You typed $REPLY"
+        ans_index=${shuffled[$index]}
+        #echo "ans_index $ans_index"
+
+        if [[ $ans_index == $question_index ]]; then
+            echo -e "\033[32mCorrect\033[0m"
+            ((++correct))
+            return=0
+        else
+            echo -e "\a\e[31mWrong\033[0m"
+            echo -e "Correct Answer: \e[4m${values[$question_index - 1]}\e[0m"
+            ((++wrong))
+            return=1
+        fi
+	done
+
+# take note of the position
+# plug into question
+}
+
+print_result () {
+	total=$((correct + wrong))
+	echo "You have answered $correct/$total"
+	if [[ $correct < $wrong ]]; then
+		echo "Try next time."
+	else
+		echo "Great. See you next time!"
+	fi
+	exit 1
+}
+
+correct=0
+wrong=0
+open_file
+prepare_quiz
+print_result
